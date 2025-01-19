@@ -1,13 +1,10 @@
 import { pathToFileURL } from 'url';
 import _ from 'lodash-es';
-import promiseLimit from 'promise-limit';
-import { createCache, getCache } from './cache.mjs';
+import { isNapCat } from './env.mjs';
+import { dlImgToCache } from './image.mjs';
 import logError from './logError.mjs';
-import { retryGet } from './retry.mjs';
 
-const dlImgLimit = promiseLimit(4);
-
-class CQCode {
+export default class CQ {
   /**
    * @param {string} type
    * @param {Record<string, any>} data
@@ -52,7 +49,7 @@ class CQCode {
   toString() {
     const list = Array.from(this.data.entries())
       .filter(([, v]) => !_.isNil(v))
-      .map(kv => kv.map(CQCode.escapeInsideCQ).join('='));
+      .map(kv => kv.map(CQ.escapeInsideCQ).join('='));
     list.unshift(`CQ:${this.type}`);
     return `[${list.join(',')}]`;
   }
@@ -77,11 +74,11 @@ class CQCode {
         _.filter(dataStr.split(',')),
         (obj, kv) => {
           const [key, ...value] = kv.split('=');
-          obj[CQCode.unescape(key)] = CQCode.unescape(value.join('='));
+          obj[CQ.unescape(key)] = CQ.unescape(value.join('='));
         },
-        {}
+        {},
       );
-      result.push(new CQCode(type, data));
+      result.push(new CQ(type, data));
     }
     return result;
   }
@@ -94,7 +91,7 @@ class CQCode {
    * @return {T}
    */
   static escape(str, insideCQ = false) {
-    if (typeof str !== 'string') return str;
+    if (typeof str !== 'string' || (global.config.bot.disableMessageEscape && !insideCQ)) return str;
     const result = str.replace(/&/g, '&amp;').replace(/\[/g, '&#91;').replace(/\]/g, '&#93;');
     if (!insideCQ) return result;
     return result
@@ -119,16 +116,35 @@ class CQCode {
    * @param {T} str 欲转义的字符串
    */
   static escapeInsideCQ(str) {
-    return CQCode.escape(str, true);
+    return CQ.escape(str, true);
   }
 
   /**
    * CQ码 图片
-   * @param {string} file 本地文件路径或URL
+   * @param {string | { file: string; url: string; }} file 本地文件路径或URL
    * @param {'flash'|'show'} [type] 类型
    */
   static img(file, type) {
-    return new CQCode('image', { file, type }).toString();
+    if (!file) {
+      console.error('[error] CQ.img file empty');
+      return '';
+    }
+    if (typeof file === 'object') {
+      // NapCat 不支持直接以收到的 file 值发送图片，改用 url 发送
+      if (typeof file.file === 'string' && !isNapCat()) {
+        file = file.file;
+      } else if (typeof file.url === 'string') {
+        file = file.url;
+      } else {
+        console.error('[error] CQ.img no available file', file);
+        return '';
+      }
+    } else file = String(file);
+    // fix Lagrange ssl issue #467
+    if (file.startsWith('https://multimedia.nt.qq.com.cn/')) {
+      file = file.replace(/^https/, 'http');
+    }
+    return new CQ('image', { file, type }).toString();
   }
 
   /**
@@ -139,17 +155,13 @@ class CQCode {
    */
   static async imgPreDl(url, type, config = {}) {
     try {
-      let path = getCache(url);
-      if (!path) {
-        const { data } = await dlImgLimit(() => retryGet(url, { responseType: 'arraybuffer', ...config }));
-        path = createCache(url, data);
-      }
-      return new CQCode('image', { file: pathToFileURL(path), type }).toString();
+      const path = await dlImgToCache(url, config, true);
+      return new CQ('image', { file: pathToFileURL(path).href, type }).toString();
     } catch (e) {
       logError('[error] cq img pre-download');
       logError(e);
     }
-    return new CQCode('image', { file: url, type }).toString();
+    return new CQ('image', { file: url, type }).toString();
   }
 
   /**
@@ -158,7 +170,7 @@ class CQCode {
    * @param {'flash'|'show'} [type] 类型
    */
   static img64(base64, type) {
-    return new CQCode('image', { file: `base64://${base64}`, type }).toString();
+    return new CQ('image', { file: `base64://${base64}`, type }).toString();
   }
 
   /**
@@ -167,7 +179,7 @@ class CQCode {
    * @param {string} cover 本地文件路径或URL
    */
   static video(file, cover) {
-    return new CQCode('video', { file, cover }).toString();
+    return new CQ('video', { file, cover }).toString();
   }
 
   /**
@@ -178,7 +190,7 @@ class CQCode {
    * @param {string} image 图片URL
    */
   static share(url, title, content, image) {
-    return new CQCode('share', { url, title, content, image }).toString();
+    return new CQ('share', { url, title, content, image }).toString();
   }
 
   /**
@@ -186,14 +198,14 @@ class CQCode {
    * @param {number} qq
    */
   static at(qq) {
-    return new CQCode('at', { qq }).toString();
+    return `${new CQ('at', { qq }).toString()}${global.config.bot.spaceAfterAt ? ' ' : ''}`;
   }
 
   /**
    * CQ码 @全体成员
    */
   static atAll() {
-    return '[CQ:at,qq=all]';
+    return `[CQ:at,qq=all]${global.config.bot.spaceAfterAt ? ' ' : ''}`;
   }
 
   /**
@@ -201,7 +213,7 @@ class CQCode {
    * @param {number} id 消息ID
    */
   static reply(id) {
-    return new CQCode('reply', { id }).toString();
+    return new CQ('reply', { id }).toString();
   }
 
   /**
@@ -209,10 +221,6 @@ class CQCode {
    * @param {string} file 本地文件路径或URL
    */
   static record(file) {
-    return new CQCode('record', { file }).toString();
+    return new CQ('record', { file }).toString();
   }
 }
-
-const CQ = CQCode;
-
-export default CQ;

@@ -6,6 +6,7 @@ import Fs from 'fs-extra';
 import _ from 'lodash-es';
 import removeMd from 'remove-markdown';
 import Axios from './axiosProxy.mjs';
+import { IS_DOCKER } from './env.mjs';
 import { getDirname } from './path.mjs';
 
 const __dirname = getDirname(import.meta.url);
@@ -27,7 +28,7 @@ export const checkUpdate = async () => {
   if (!latestVersion || lastCheck === latestVersion || compare(version, latestVersion, '>=')) return;
   console.log(`发现新版本：${latestVersion}`);
   const { data: fullChangelog } = await AxiosRaw.get(
-    `https://ghproxy.com/https://raw.githubusercontent.com/${repoName}/v${latestVersion}/CHANGELOG.md`
+    `https://mirror.ghproxy.com/https://raw.githubusercontent.com/${repoName}/v${latestVersion}/CHANGELOG.md`
   );
   const changelogs = _.transform(
     fullChangelog.split(/\s*###\s*/),
@@ -38,10 +39,13 @@ export const checkUpdate = async () => {
       if (compare(version, v, '<')) {
         arr.push('', removeMd(text.trim(), { stripListLeaders: false }));
       }
+      if (arr.length >= 7) return false;
     },
     [`发现新版本 v${latestVersion}`]
   );
-  changelogs.push('', '实验性更新指令：--update-cqps', '建议在可以登上服务器的状态下使用，以免出现意外起不来（');
+  if (!IS_DOCKER) {
+    changelogs.push('', '实验性更新指令：--update-cqps', '建议在可以登上服务器的状态下使用，以免出现意外起不来（');
+  }
   global.sendMsg2Admin(changelogs.join('\n'));
   lastCheck = latestVersion;
 };

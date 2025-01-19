@@ -23,9 +23,11 @@ import asyncMap from './utils/asyncMap.mjs';
 import { execUpdate } from './utils/checkUpdate.mjs';
 import CQ from './utils/CQcode.mjs';
 import emitter from './utils/emitter.mjs';
-import { getAntiShieldedCqImg64FromUrl } from './utils/image.mjs';
+import { IS_DOCKER } from './utils/env.mjs';
+import { MsgImage } from './utils/image.mjs';
 import logError from './utils/logError.mjs';
 import logger from './utils/logger.mjs';
+import { getRawMessage } from './utils/message.mjs';
 import { resolveByDirname } from './utils/path.mjs';
 import psCache from './utils/psCache.mjs';
 import searchingMap from './utils/searchingMap.mjs';
@@ -41,6 +43,10 @@ const rand = RandomSeed.create();
 // 全局变量
 globalReg({
   bot,
+  botClientInfo: {
+    name: '',
+    version: '',
+  },
   replyMsg,
   sendMsg2Admin,
   parseArgs,
@@ -91,7 +97,7 @@ bot.on('request.group.invite', context => {
 // 设置监听器
 function setBotEventListener() {
   ['message.private', 'message.group', 'message.group.@.me', 'message.guild', 'message.guild.@.me'].forEach(name =>
-    bot.off(name)
+    bot.off(name),
   );
   if (global.config.bot.enablePM) {
     // 私聊
@@ -134,9 +140,23 @@ bot
   .on('socket.connect', (wsType, sock, attempts) => {
     console.log(`连接成功[${wsType}]#${attempts}`);
     if (wsType === '/api') {
-      setTimeout(() => {
-        sendMsg2Admin(`已上线#${attempts}`);
-      }, 1000);
+      bot('get_version_info')
+        .then(({ retcode, data, message }) => {
+          if (retcode !== 0 || !data) {
+            console.error('获取客户端信息失败', message);
+            return;
+          }
+
+          console.log('客户端', data.app_name, data.app_version);
+          console.log('协议版本', data.protocol_version);
+
+          global.botClientInfo = {
+            name: data.app_name || '',
+            version: data.app_version || '',
+          };
+        })
+        .catch(console.error);
+      sendMsg2Admin(`已上线#${attempts}`);
     }
   });
 
@@ -283,7 +303,7 @@ function handleAdminMsg(context) {
   // 明日方舟
   if (args['update-akhr'] || args['akhr-update']) {
     Akhr.updateData().then(success =>
-      replyMsg(context, success ? '方舟公招数据已更新' : '方舟公招数据更新失败，请查看错误日志')
+      replyMsg(context, success ? '方舟公招数据已更新' : '方舟公招数据更新失败，请查看错误日志'),
     );
     return true;
   }
@@ -293,7 +313,8 @@ function handleAdminMsg(context) {
 
   // 更新程序
   if (args['update-cqps']) {
-    replyMsg(context, '开始更新，完成后会重新启动').then(execUpdate);
+    if (IS_DOCKER) replyMsg(context, 'Docker 部署不支持一键更新');
+    else replyMsg(context, '开始更新，完成后会重新启动').then(execUpdate);
     return true;
   }
 
@@ -353,10 +374,8 @@ async function privateAndAtMsg(e, context) {
             e.stopPropagation();
             return;
           }
-          const imgs = getImgs(data.message);
-          const rMsg = imgs
-            .map(({ file, url }) => `[CQ:image,file=${CQ.escape(file, true)},url=${CQ.escape(url, true)}]`)
-            .join('');
+          const imgs = getImgs(getRawMessage(data));
+          const rMsg = imgs.map(img => img.toCQ()).join('');
           context = { ...context, message: context.message.replace(/^\[CQ:reply,id=-?\d+.*?\]/, rMsg) };
         } else {
           // 获取不到原消息，忽略
@@ -380,12 +399,12 @@ async function privateAndAtMsg(e, context) {
   } else if (context.message.search('--') !== -1) {
     // 忽略
   } else if (context.message_type === 'private') {
-    const dbKey = context.message === 'book' ? 'doujin' : context.message;
+    const dbKey = context.message;
     const db = snDB[dbKey];
     if (db) {
       logger.smSwitch(0, context.user_id, true);
       logger.smSetDB(0, context.user_id, db);
-      replyMsg(context, `已临时切换至[${dbKey}]搜图模式√`, true);
+      replyMsg(context, `已临时切换至【${dbKey}】搜图模式√`, true);
     } else {
       replyMsg(context, global.config.bot.replys.default, true);
     }
@@ -445,7 +464,7 @@ async function groupMsg(e, context) {
   if (smStatus) {
     // 获取搜图模式下的搜图参数
     const getDB = () => {
-      const cmd = /^(all|pixiv|danbooru|doujin|book|anime)$/.exec(context.message);
+      const cmd = /^(all|pixiv|danbooru|doujin|book|anime|原图)$/.exec(context.message);
       if (cmd) return snDB[cmd[1]] || -1;
       return -1;
     };
@@ -455,7 +474,7 @@ async function groupMsg(e, context) {
     if (cmdDB !== -1) {
       logger.smSetDB(group_id, user_id, cmdDB);
       smStatus = cmdDB;
-      replyMsg(context, `已切换至[${context.message}]搜图模式√`);
+      replyMsg(context, `已切换至【${context.message}】搜图模式√`);
     }
 
     // 有图片则搜图
@@ -531,20 +550,24 @@ async function searchImg(context, customDB = -1) {
     }
   } else db = customDB;
 
+  if (db === snDB.原图) {
+    originImgConvert(context);
+    return;
+  }
+
   // 得到图片链接并搜图
   const msg = context.message;
   const imgs = getImgs(msg);
-
-  const incorrectImgs = _.remove(imgs, ({ url }) => !/^https?:\/\/[^&]+\//.test(url));
-  if (incorrectImgs.length) {
-    replyMsg(context, '部分图片无法获取，请尝试使用其他设备QQ发送', false, true);
-  }
 
   if (!imgs.length) return;
 
   // 获取图片链接
   if (/(^|\s|\])链接($|\s|\[)/.test(context.message) || args['get-url']) {
-    replyMsg(context, _.map(imgs, 'url').join('\n'));
+    const validImgs = imgs.filter(img => img.isUrlValid);
+    if (validImgs.length !== imgs.length) {
+      replyMsg(context, '部分图片无法获取有效链接，请尝试使用其他设备QQ发送', false, true);
+    }
+    replyMsg(context, _.map(validImgs, 'url').join('\n'));
     return;
   }
 
@@ -559,8 +582,7 @@ async function searchImg(context, customDB = -1) {
       if (cache) {
         const msgs = cache.map(msg => `${CQ.escape('[缓存]')} ${msg}`);
         const antiShieldingMode = global.config.bot.antiShielding;
-        const cqImg =
-          antiShieldingMode > 0 ? await getAntiShieldedCqImg64FromUrl(img.url, antiShieldingMode) : CQ.img(img.file);
+        const cqImg = antiShieldingMode > 0 ? await img.getAntiShieldedCqImg64(antiShieldingMode) : img.toCQ();
         await replySearchMsgs(context, msgs, [cqImg]);
         continue;
       }
@@ -569,6 +591,15 @@ async function searchImg(context, customDB = -1) {
     // 检查搜图次数
     if (!isSendByAdmin(context) && !logger.applyQuota(context.user_id, { value: global.config.bot.searchLimit })) {
       replyMsg(context, global.config.bot.replys.personLimit, false, true);
+      return;
+    }
+
+    // 检查图片比例
+    if (
+      global.config.bot.stopSearchingHWRatioGt > 0 &&
+      !(await img.checkImageHWRatio(global.config.bot.stopSearchingHWRatioGt))
+    ) {
+      replyMsg(context, global.config.bot.replys.stopSearchingByHWRatio, false, true);
       return;
     }
 
@@ -591,7 +622,7 @@ async function searchImg(context, customDB = -1) {
 
     // saucenao
     if (!useAscii2d) {
-      const snRes = await saucenao(img.url, db, args.debug || global.config.bot.debug);
+      const snRes = await saucenao(img, db, args.debug || global.config.bot.debug);
       if (!snRes.success) success = false;
       if (snRes.success) hasSucc = true;
       if (snRes.lowAcc) snLowAcc = true;
@@ -610,10 +641,11 @@ async function searchImg(context, customDB = -1) {
 
     // ascii2d
     if (useAscii2d) {
-      const { color, bovw, success: asSuc, asErr } = await ascii2d(img.url, snLowAcc).catch(asErr => ({ asErr }));
+      const { color, bovw, success: asSuc, asErr } = await ascii2d(img, snLowAcc).catch(asErr => ({ asErr }));
       if (asErr) {
         success = false;
         const errMsg =
+          (typeof asErr === 'string' && asErr) ||
           (asErr.response && asErr.response.data.length < 100 && `\n${asErr.response.data}`) ||
           (asErr.message && `\n${asErr.message}`) ||
           '';
@@ -630,7 +662,7 @@ async function searchImg(context, customDB = -1) {
 
     // 搜番
     if (useWhatAnime) {
-      const waRet = await whatanime(img.url, args.debug || global.config.bot.debug);
+      const waRet = await whatanime(img, args.debug || global.config.bot.debug);
       if (waRet.success) hasSucc = true;
       if (!waRet.success) success = false; // 如果搜番有误也视作不成功
       await replier.reply(...waRet.msgs);
@@ -698,15 +730,11 @@ function doAkhr(context) {
  * 从消息中提取图片
  *
  * @param {string} msg
- * @returns {Array<{ file: string; url: string; }>} 图片URL数组
+ * @returns {MsgImage[]} 图片URL数组
  */
 function getImgs(msg) {
   const cqImgs = CQ.from(msg).filter(cq => cq.type === 'image');
-  return cqImgs.map(cq => {
-    const data = cq.pickData(['file', 'url']);
-    data.url = getUniversalImgURL(data.url);
-    return data;
-  });
+  return cqImgs.map(cq => new MsgImage(cq));
 }
 
 /**
@@ -755,7 +783,7 @@ export async function replyMsg(context, message, at = false, reply = false) {
       },
       message,
       at,
-      reply
+      reply,
     );
   }
 
@@ -820,7 +848,7 @@ export async function replySearchMsgs(
   ctx,
   msgs,
   forwardPrependMsgs = [],
-  { groupForwardSearchResult, privateForwardSearchResult, pmSearchResult, pmSearchResultTemp } = global.config.bot
+  { groupForwardSearchResult, privateForwardSearchResult, pmSearchResult, pmSearchResultTemp } = global.config.bot,
 ) {
   msgs = msgs.filter(msg => msg && typeof msg === 'string');
   if (msgs.length === 0) return;
@@ -946,7 +974,7 @@ export function parseArgs(str, enableArray = false, _key = null) {
       .split(' '),
     {
       boolean: true,
-    }
+    },
   );
   if (!enableArray) {
     for (const key in m) {
@@ -962,16 +990,6 @@ function debugMsgDeleteBase64Content(msg) {
   return msg.replace(/base64:\/\/[a-z\d+/=]+/gi, '(base64)');
 }
 
-function getUniversalImgURL(url = '') {
-  if (/^https?:\/\/(c2cpicdw|gchat)\.qpic\.cn\/(offpic|gchatpic)_new\//.test(url)) {
-    return url
-      .replace('/c2cpicdw.qpic.cn/offpic_new/', '/gchat.qpic.cn/gchatpic_new/')
-      .replace(/\/\d+\/+\d+-\d+-/, '/0/0-0-')
-      .replace(/\?.*$/, '');
-  }
-  return url;
-}
-
 function isSendByAdmin(ctx) {
   return ctx.message_type === 'guild'
     ? ctx.user_id === global.config.bot.adminTinyId
@@ -980,8 +998,12 @@ function isSendByAdmin(ctx) {
 
 function handleOriginImgConvert(ctx) {
   if (!(/(^|\s|\])原图($|\s|\[)/.test(ctx.message) && hasImage(ctx.message))) return;
-  const cqImgs = CQ.from(ctx.message).filter(cq => cq.type === 'image');
-  const imgs = cqImgs.map(cq => CQ.img(cq.get('file')));
-  replyMsg(ctx, imgs.join(''), false, false);
+  originImgConvert(ctx);
   return true;
+}
+
+function originImgConvert(ctx) {
+  const imgs = getImgs(ctx.message);
+  const lines = imgs.map(img => (img.isUrlValid ? img.url : '获取原图链接失败'));
+  replyMsg(ctx, lines.join('\n'), false, false);
 }

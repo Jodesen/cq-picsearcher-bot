@@ -18,9 +18,9 @@ const getIdFromNormalLink = link => {
   if (typeof link !== 'string') return null;
   const searchVideo = /bilibili\.com\/video\/(?:av(\d+)|(bv[\da-z]+))/i.exec(link) || {};
   const searchDynamic =
+    /(?:www|m)\.bilibili\.com\/opus\/(\d+)/i.exec(link) ||
     /t\.bilibili\.com\/(\d+)/i.exec(link) ||
     /m\.bilibili\.com\/dynamic\/(\d+)/i.exec(link) ||
-    /www\.bilibili\.com\/opus\/(\d+)/i.exec(link) ||
     {};
   const searchArticle = /bilibili\.com\/read\/(?:cv|mobile\/)(\d+)/i.exec(link) || {};
   const searchLiveRoom = /live\.bilibili\.com\/(\d+)/i.exec(link) || {};
@@ -51,7 +51,7 @@ const getIdFromShortLink = shortLink => {
 const getIdFromMsg = async msg => {
   let result = getIdFromNormalLink(msg);
   if (Object.values(result).some(id => id)) return result;
-  if ((result = /((b23|acg)\.tv|bili2233.cn)\/[0-9a-zA-Z]+/.exec(msg))) {
+  if ((result = /((b23|acg)\.tv|bili2233\.cn)\/[0-9a-zA-Z]+/.exec(msg))) {
     return getIdFromShortLink(`https://${result[0]}`);
   }
   return {};
@@ -170,7 +170,7 @@ const bilibiliHandler = async context => {
   }
 
   if (setting.getDynamicInfo && dyid) {
-    const reply = await getDynamicInfo(dyid);
+    const reply = await getDynamicInfo(dyid, true);
     if (reply) {
       replyResult({
         context,

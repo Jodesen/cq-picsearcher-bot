@@ -1,3 +1,4 @@
+import { readFileSync } from 'fs';
 import * as Cheerio from 'cheerio';
 import FormData from 'form-data';
 import _ from 'lodash-es';
@@ -13,22 +14,17 @@ let hostsI = 0;
 /**
  * ascii2d 搜索
  *
- * @param {string} url 图片地址
+ * @param {MsgImage} img 图片
  * @returns 色合検索 和 特徴検索 结果
  */
-async function doSearch(url, snLowAcc = false) {
+async function doSearch(img, snLowAcc = false) {
   const hosts = global.config.ascii2dHost;
   let host = hosts[hostsI++ % hosts.length];
-  if (host === 'ascii2d.net') host = `https://${host}`;
-  else if (!/^https?:\/\//.test(host)) host = `http://${host}`;
-  const callApi = global.config.bot.ascii2dUsePuppeteer
-    ? callAscii2dUrlApiWithPuppeteer
-    : global.config.bot.ascii2dLocalUpload
-    ? callAscii2dUploadApi
-    : callAscii2dUrlApi;
+  if (!/^https?:\/\//.test(host)) host = `https://${host}`;
+  const callApi = global.config.bot.ascii2dUsePuppeteer ? callAscii2dUrlApiWithPuppeteer : callAscii2dApi;
   const { colorURL, colorDetail } = await retryAsync(
     async () => {
-      const ret = await callApi(host, url);
+      const ret = await callApi(host, img);
       const colorURL = ret.request.res.responseUrl;
       if (!colorURL.includes('/color/')) {
         const $ = Cheerio.load(ret.data, { decodeEntities: false });
@@ -42,14 +38,15 @@ async function doSearch(url, snLowAcc = false) {
       };
     },
     3,
-    e => String(_.get(e, 'response.data')).trim() === 'first byte timeout'
+    e => typeof e !== 'string' && String(_.get(e, 'response.data')).trim() === 'first byte timeout',
   );
   const bovwURL = colorURL.replace('/color/', '/bovw/');
   const bovwDetail = await (global.config.bot.ascii2dUsePuppeteer ? getAscii2dWithPuppeteer : Axios.cfGet)(
-    bovwURL
+    bovwURL,
   ).then(r => getDetail(r, host));
-  const colorRet = await getResult(colorDetail, snLowAcc);
-  const bovwRet = await getResult(bovwDetail, snLowAcc);
+  const isCf = host === 'https://ascii2d.net';
+  const colorRet = await getResult(colorDetail, snLowAcc, isCf);
+  const bovwRet = await getResult(bovwDetail, snLowAcc, isCf);
   return {
     color: `ascii2d 色合検索\n${colorRet.result}`,
     bovw: `ascii2d 特徴検索\n${bovwRet.result}`,
@@ -57,19 +54,38 @@ async function doSearch(url, snLowAcc = false) {
   };
 }
 
-function callAscii2dUrlApi(host, imgUrl) {
-  return Axios.cfGet(`${host}/search/url/${imgUrl}`);
+/**
+ * @param {MsgImage} img
+ */
+async function callAscii2dApi(host, img) {
+  const isCf = host === 'https://ascii2d.net';
+
+  if (global.config.bot.ascii2dLocalUpload || !img.isUrlValid) {
+    const path = await img.getPath();
+    if (path) {
+      const form = new FormData();
+      form.append('file', readFileSync(path), 'image');
+      return Axios[isCf ? 'cfPost' : 'post'](`${host}/search/file`, form, { headers: form.getHeaders() });
+    }
+  }
+
+  if (img.isUrlValid) {
+    return Axios[isCf ? 'cfGet' : 'get'](`${host}/search/url/${img.url}`);
+  }
+
+  // eslint-disable-next-line no-throw-literal
+  throw '部分图片无法获取，如为转发请尝试保存后再手动发送，或使用其他设备手动发送';
 }
 
-async function callAscii2dUploadApi(host, imgUrl) {
-  const imgBuffer = await Axios.get(imgUrl, { responseType: 'arraybuffer' }).then(r => r.data);
-  const form = new FormData();
-  form.append('file', imgBuffer, 'image');
-  return Axios.cfPost(`${host}/search/file`, form, { headers: form.getHeaders() });
-}
-
-function callAscii2dUrlApiWithPuppeteer(host, imgUrl) {
-  return getAscii2dWithPuppeteer(`${host}/search/url/${imgUrl}`);
+/**
+ * @param {MsgImage} img
+ */
+function callAscii2dUrlApiWithPuppeteer(host, img) {
+  if (!img.isUrlValid) {
+    // eslint-disable-next-line no-throw-literal
+    throw '部分图片无法获取，如为转发请尝试保存后再手动发送，或使用其他设备手动发送';
+  }
+  return getAscii2dWithPuppeteer(`${host}/search/url/${img.url}`);
 }
 
 async function getAscii2dWithPuppeteer(url) {
@@ -122,13 +138,13 @@ function getDetail(ret, baseURL) {
   return result;
 }
 
-async function getResult({ url, title, author, thumbnail, author_url }, snLowAcc = false) {
+async function getResult({ url, title, author, thumbnail, author_url }, snLowAcc = false, isCf = true) {
   if (!title) return { success: false, result: '由未知错误导致搜索失败' };
   const texts = [CQ.escape(author ? `「${title}」/「${author}」` : title)];
   if (thumbnail && !(global.config.bot.hideImg || (snLowAcc && global.config.bot.hideImgWhenLowAcc))) {
     const mode = global.config.bot.antiShielding;
-    if (mode > 0) texts.push(await getAntiShieldedCqImg64FromUrl(thumbnail, mode));
-    else texts.push(await getCqImg64FromUrl(thumbnail));
+    if (mode > 0) texts.push(await getAntiShieldedCqImg64FromUrl(thumbnail, mode, undefined, isCf));
+    else texts.push(await getCqImg64FromUrl(thumbnail, undefined, isCf));
   }
   if (url) texts.push(CQ.escape(confuseURL(url)));
   if (author_url) texts.push(`Author: ${CQ.escape(confuseURL(author_url))}`);

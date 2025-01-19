@@ -2,6 +2,7 @@ import Path from 'path';
 import { encode, decode } from '@msgpack/msgpack';
 import Fs from 'fs-extra';
 import klaw from 'klaw-sync';
+import md5 from 'md5';
 import emitter from './emitter.mjs';
 import logError from './logError.mjs';
 import { getDirname } from './path.mjs';
@@ -49,7 +50,16 @@ class PSCache {
    * @private
    */
   getCachePath(img, db) {
-    return Path.resolve(__dirname, '../../data/pscache', `${img.file}.${db}.psc`);
+    let key = img.key || img.file;
+    if (key.includes('/')) {
+      let match;
+      if ((match = /\/\d+-\d+-([0-9a-zA-Z]+)\//.exec(key))) key = match[1];
+      else if ((match = /(?:&|\?)fileid=([^&]+)/.exec(key))) {
+        const parts = key.split('_');
+        key = parts.length === 4 ? parts.slice(0, 3).join('_') : match[1];
+      }
+    }
+    return Path.resolve(__dirname, '../../data/pscache', `${md5(key)}.${db}.psc`);
   }
 
   /**
