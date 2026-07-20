@@ -49,7 +49,7 @@ class FlareSolverr {
     r.solution.cookies.forEach(c => {
       this.cookieJar.setCookie(
         new Cookie({
-          domain: c.domain,
+          domain: c.domain.replace(/^\./, ''),
           expires: new Date(c.expiry * 1000),
           httpOnly: c.httpOnly,
           key: c.name,
