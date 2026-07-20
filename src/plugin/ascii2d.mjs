@@ -146,17 +146,25 @@ function getDetail(ret, baseURL) {
 async function getResult({ url, title, author, thumbnail, author_url }, snLowAcc = false) {
   if (!title) return { success: false, result: '由未知错误导致搜索失败' };
   const texts = [CQ.escape(author ? `「${title}」/「${author}」` : title)];
-  if (thumbnail && !(global.config.bot.hideImg || (snLowAcc && global.config.bot.hideImgWhenLowAcc))) {
-    const mode = global.config.bot.antiShielding;
-    if (global.config.cloudflareBypassForScraping.enableForAscii2d) {
-      const img = await cloudflareBypassForScraping.getImage(thumbnail);
-      texts.push(CQ.img64(mode > 0 ? await imgAntiShieldingFromArrayBuffer(img, mode) : img));
-    } else if (global.config.flaresolverr.enableForAscii2d) {
-      const img = await flareSolverr.getImage(thumbnail);
-      texts.push(CQ.img64(mode > 0 ? await imgAntiShieldingFromArrayBuffer(img, mode) : img));
-    } else {
-      texts.push(mode > 0 ? await getAntiShieldedCqImg64FromUrl(thumbnail, mode) : await getCqImg64FromUrl(thumbnail));
+  try {
+    if (thumbnail && !(global.config.bot.hideImg || (snLowAcc && global.config.bot.hideImgWhenLowAcc))) {
+      const mode = global.config.bot.antiShielding;
+      if (global.config.cloudflareBypassForScraping.enableForAscii2d) {
+        const img = await cloudflareBypassForScraping.getImage(thumbnail);
+        texts.push(CQ.img64(mode > 0 ? await imgAntiShieldingFromArrayBuffer(img, mode) : img));
+      } else if (global.config.flaresolverr.enableForAscii2d) {
+        const img = await flareSolverr.getImage(thumbnail);
+        texts.push(CQ.img64(mode > 0 ? await imgAntiShieldingFromArrayBuffer(img, mode) : img));
+      } else {
+        texts.push(
+          mode > 0 ? await getAntiShieldedCqImg64FromUrl(thumbnail, mode) : await getCqImg64FromUrl(thumbnail),
+        );
+      }
     }
+  } catch (error) {
+    texts.push('[缩略图获取失败]');
+    console.error('[ascii2d] get result thumbnail error:', thumbnail);
+    logError(error);
   }
   if (url) texts.push(CQ.escape(confuseURL(url)));
   if (author_url) texts.push(`Author: ${CQ.escape(confuseURL(author_url))}`);
