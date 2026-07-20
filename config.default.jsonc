@@ -78,7 +78,7 @@
     "getDoujinDetailFromNhentai": true,
     // 若 nHentai 主站有 cf js challenge 无法直接搜索，可以配置使用镜像站搜索，如 https://nhentai.xxx
     // 但需注意镜像站收录本子的进度通常落后于主站，设置空字符串则去主站搜索
-    // 不再建议使用，建议使用 CloudflareBypassForScraping，见设置项 `cloudflareBypassForScraping`
+    // 不再建议使用，建议使用 FlareSolverr，见设置项 `flaresolverr`
     "getDoujinDetailFromNhentaiMirrorSite": "",
     // 是否开启搜图反馈，成功接收图片会回复 bot.replys.searchFeedback，可用于判断图片是否被屏蔽
     "searchFeedback": false,
