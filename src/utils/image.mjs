@@ -107,7 +107,7 @@ const check9ImgCanMerge = async paths => {
           Math.abs(width - height) / height < 0.15,
       );
       if (!check) return result;
-      const widthSum = sumBy(sizes, 'width');
+      const widthSum = sumBy(sizes, s => s.width);
       if (result.lines === 0) result.width = widthSum;
       else if (result.width !== widthSum) return result;
       result.points.push(
