@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { sumBy } from 'es-toolkit';
 import { imageSizeFromFile } from 'image-size/fromFile';
 import promiseLimit from 'promise-limit';
@@ -243,6 +243,10 @@ export class MsgImage {
     if (this.path) return this.path;
     try {
       this.path = (await global.bot('get_image', { file: this.file })).data.file;
+      // 本地文件不存在时（客户端位于远程或 docker 中），尝试从 url 下载
+      if (!existsSync(this.path) && this.isUrlValid) {
+        this.path = await dlImgToCache(this.url);
+      }
       return this.path;
     } catch (error) {
       console.error('[MsgImage] getImage error', this.file);
