@@ -955,7 +955,7 @@ function createForwardNodes(ctx, msgs, prependCtxMsg = false) {
   const messages = msgs.map(content => ({
     type: 'node',
     data: {
-      name: '\u200B',
+      name: 'QQ用户',
       uin: String(ctx.self_id),
       content,
     },
