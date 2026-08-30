@@ -97,6 +97,19 @@ const WebpOptionsSchema = z.object({
     .default(0),
 });
 
+/**
+ * webp-wasm 会把 `data.buffer` 整段交给解码器，忽略 byteOffset/byteLength。
+ * HTTP 单 chunk 的 Buffer 经常是更大 ArrayBuffer 上的视图，必须先收成紧密副本。
+ * @param {ArrayBuffer | ArrayBufferView} data
+ */
+function toTightUint8Array(data) {
+  const view = data instanceof Uint8Array ? data : new Uint8Array(data);
+  if (view.byteOffset === 0 && view.byteLength === view.buffer.byteLength) {
+    return view;
+  }
+  return new Uint8Array(view);
+}
+
 export function webp() {
   return {
     mime: 'image/webp',
@@ -168,7 +181,11 @@ export function webp() {
       return Buffer.from(arrayBuffer);
     },
     decode: async data => {
-      const result = await WebpWasm.decode(data);
+      const bytes = toTightUint8Array(data);
+      const result = await WebpWasm.decode(bytes);
+      if (!result?.data) {
+        throw new Error('Failed to decode WebP image');
+      }
 
       return {
         data: Buffer.from(result.data),
