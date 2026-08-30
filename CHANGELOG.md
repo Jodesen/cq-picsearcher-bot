@@ -2,6 +2,11 @@
 
 ## 2026
 
+### v3.25.0
+
+- 修复 SoutuBot 搜图可能出现 `Cannot read properties of null (reading 'data')` 报错的问题
+- 对 SoutuBot 传入过大的图片自动进行压缩 [#500](../../issues/500)
+
 ### v3.24.1
 
 - 本地QQ图片路径不存在时回退到下载远程图片
