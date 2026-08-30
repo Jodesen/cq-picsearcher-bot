@@ -6,6 +6,7 @@ import CQ from '../utils/CQcode.mjs';
 import { flareSolverr } from '../utils/flareSolverr.mjs';
 import { getAntiShieldedCqImg64FromUrl, getCqImg64FromUrl } from '../utils/image.mjs';
 import { imgAntiShieldingFromArrayBuffer } from '../utils/imgAntiShielding.mjs';
+import logError from '../utils/logError.mjs';
 import { confuseURL } from '../utils/url.mjs';
 
 const MAIN_PAGE_URL = 'https://soutubot.moe';
@@ -180,8 +181,16 @@ function selectBestResult(results) {
 
 async function getResult({ source, title, subjectPath, previewImageUrl, similarity }) {
   const texts = [`SoutuBot (${similarity}%)`, CQ.escape(title || '')];
-  const image = await getPreviewImage(previewImageUrl);
-  if (image) texts.push(image);
+  if (previewImageUrl && !global.config.bot.hideImg) {
+    try {
+      const image = await getPreviewImage(previewImageUrl);
+      texts.push(image || '[缩略图获取失败]');
+    } catch (error) {
+      texts.push('[缩略图获取失败]');
+      console.error('[soutuBot] get result thumbnail error:', previewImageUrl);
+      logError(error);
+    }
+  }
 
   const url = getSubjectUrl(source, subjectPath);
   if (url) texts.push(CQ.escape(confuseURL(url)));
@@ -203,8 +212,6 @@ function getSubjectUrl(source, subjectPath) {
  * @param {string} url
  */
 async function getPreviewImage(url) {
-  if (!url || global.config.bot.hideImg) return '';
-
   const mode = global.config.bot.antiShielding;
 
   const img = global.config.flaresolverr.enableForSoutuBot

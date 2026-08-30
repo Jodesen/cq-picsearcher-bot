@@ -234,9 +234,16 @@ async function doSearch(img, db, debug = false) {
 async function getShareText({ url, title, thumbnail, author_url, source }) {
   const texts = [title];
   if (thumbnail && !global.config.bot.hideImg) {
-    const mode = global.config.bot.antiShielding;
-    if (mode > 0) texts.push(await getAntiShieldedCqImg64FromUrl(thumbnail, mode));
-    else texts.push(await getCqImg64FromUrl(thumbnail));
+    try {
+      const mode = global.config.bot.antiShielding;
+      const image =
+        mode > 0 ? await getAntiShieldedCqImg64FromUrl(thumbnail, mode) : await getCqImg64FromUrl(thumbnail);
+      texts.push(image || '[缩略图获取失败]');
+    } catch (error) {
+      texts.push('[缩略图获取失败]');
+      console.error('[saucenao] get result thumbnail error:', thumbnail);
+      logError(error);
+    }
   }
   if (url) texts.push(confuseURL(url));
   if (author_url) texts.push(`Author: ${confuseURL(author_url)}`);
