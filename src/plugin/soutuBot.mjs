@@ -1,11 +1,13 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import FormData from 'form-data';
 import Axios from '../utils/axiosProxy.mjs';
+import { createCache, getCache } from '../utils/cache.mjs';
 import { cloudflareBypassForScraping } from '../utils/cloudflareBypassForScraping.mjs';
 import CQ from '../utils/CQcode.mjs';
 import { flareSolverr } from '../utils/flareSolverr.mjs';
 import { getAntiShieldedCqImg64FromUrl, getCqImg64FromUrl } from '../utils/image.mjs';
 import { imgAntiShieldingFromArrayBuffer } from '../utils/imgAntiShielding.mjs';
+import Jimp from '../utils/jimp.mjs';
 import logError from '../utils/logError.mjs';
 import { confuseURL } from '../utils/url.mjs';
 
@@ -13,6 +15,9 @@ const MAIN_PAGE_URL = 'https://soutubot.moe';
 const API_URL = 'https://soutubot.moe/api/search';
 const FACTOR = '1.2';
 const CN_SIMILARITY_RANGE = 10;
+const COMPRESS_MIN_SIZE = 900 * 1024;
+const COMPRESS_MAX_WIDTH = 2000;
+const COMPRESS_QUALITY = 90;
 const SOURCE_HOSTS = {
   nhentai: 'https://nhentai.net',
   ehentai: 'https://e-hentai.org',
@@ -104,6 +109,26 @@ function getCookies(headers = {}) {
 }
 
 /**
+ * @param {string} path
+ */
+async function getSoutuBotUploadBuffer(path) {
+  if (statSync(path).size < COMPRESS_MIN_SIZE) {
+    return readFileSync(path);
+  }
+
+  const cachedPath = getCache(path);
+  if (cachedPath) return readFileSync(cachedPath);
+
+  const img = await Jimp.read(path);
+  if (img.width > COMPRESS_MAX_WIDTH) {
+    img.resize({ w: COMPRESS_MAX_WIDTH });
+  }
+  const buffer = await img.getBuffer('image/jpeg', { quality: COMPRESS_QUALITY });
+  createCache(path, buffer);
+  return buffer;
+}
+
+/**
  * @param {MsgImage} img
  */
 async function callSoutuBotApi(img) {
@@ -114,7 +139,7 @@ async function callSoutuBotApi(img) {
   }
 
   const form = new FormData();
-  form.append('file', readFileSync(path), 'image');
+  form.append('file', await getSoutuBotUploadBuffer(path), 'image');
   form.append('factor', FACTOR);
 
   const headers = {

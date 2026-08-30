@@ -41,6 +41,7 @@
     "@jimp/js-png": "^1.6.1",
     "@jimp/js-tiff": "^1.6.1",
     "@jimp/plugin-blit": "^1.6.1",
+    "@jimp/plugin-resize": "^1.6.1",
     "@jimp/plugin-rotate": "^1.6.1",
     "@json2csv/plainjs": "^7.0.6",
     "@koa/router": "^15.6.0",
