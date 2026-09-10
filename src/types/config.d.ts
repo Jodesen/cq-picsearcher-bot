@@ -267,6 +267,11 @@ declare interface Repeat {
   times: number;
   probability: number;
   commonProb: number;
+  maxWordNum: number;
+  maxPicNum: number;
+  allowMixed: boolean;
+  allowLink: boolean;
+  disallowReg: string;
 }
 
 declare interface Cache {
