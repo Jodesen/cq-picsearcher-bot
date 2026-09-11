@@ -3,12 +3,6 @@ import Axios from '../utils/axiosProxy.mjs';
 import { cloudflareBypassForScraping } from '../utils/cloudflareBypassForScraping.mjs';
 import { flareSolverr } from '../utils/flareSolverr.mjs';
 
-const exts = {
-  j: 'jpg',
-  p: 'png',
-  g: 'gif',
-};
-
 const getSearchURL = keyword =>
   `https://nhentai.net/api/v2/search?query=${encodeURIComponent(keyword)}&sort=date&page=1`;
 
@@ -38,7 +32,7 @@ async function getDetailFromNHentaiAPI(name) {
 
   return {
     url: `https://nhentai.net/g/${data.id}/`,
-    thumb: `https://t.nhentai.net/galleries/${data.media_id}/cover.${exts[data.images.thumbnail.t]}`,
+    thumb: `https://t.nhentai.net/${data.thumbnail}`,
   };
 }
 
