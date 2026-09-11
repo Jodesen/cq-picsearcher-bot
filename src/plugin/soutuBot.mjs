@@ -80,8 +80,13 @@ async function refreshCache() {
     cookies = getCookies(ret.headers);
   }
 
-  const m = getGlobalM(ret.data);
-  if (m <= 0) throw new Error(`SoutuBot 获取 m 失败：${m}`);
+  let m;
+  try {
+    m = getGlobalM(ret.data);
+  } catch (e) {
+    console.error('[error] SoutuBot get m body:', ret.data);
+    throw e;
+  }
 
   cache = {
     m,
@@ -94,9 +99,10 @@ async function refreshCache() {
  */
 function getGlobalM(body) {
   const match = /m:\s*(-?\d+),/.exec(body);
-  if (!match) return -1;
+  if (!match) throw new Error('SoutuBot 获取 m 值失败：未找到');
   const m = Number(match[1]);
-  return Number.isFinite(m) ? m : -2;
+  if (!Number.isFinite(m)) throw new Error('SoutuBot 获取 m 值失败：值无效');
+  return m;
 }
 
 function getCookies(headers = {}) {
