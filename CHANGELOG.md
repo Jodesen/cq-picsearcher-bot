@@ -2,6 +2,18 @@
 
 ## 2026
 
+### v3.26.0
+
+- 支持按规则跳过复读 [#501](../../issues/501)
+- 修复 nHentai 搜索获取缩略图失败的问题
+- SoutuBot 获取 m 值失败时在日志输出响应内容
+- 配置项变更
+  - A `bot.repeat.maxWordNum`
+  - A `bot.repeat.maxPicNum`
+  - A `bot.repeat.allowMixed`
+  - A `bot.repeat.allowLink`
+  - A `bot.repeat.disallowReg`
+
 ### v3.25.0
 
 - 修复 SoutuBot 搜图可能出现 `Cannot read properties of null (reading 'data')` 报错的问题
