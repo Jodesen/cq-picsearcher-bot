@@ -71,7 +71,8 @@ class SearchingMap extends Map {
 
         const restCtxs = needGroupForward ? ctxs : tail(ctxs);
         const antiShieldingMode = global.config.bot.antiShielding;
-        const cqImg = antiShieldingMode > 0 ? await img.getAntiShieldedCqImg64(antiShieldingMode) : img.toCQ();
+        const cqImg =
+          antiShieldingMode > 0 ? (await img.getAntiShieldedCqImg64(antiShieldingMode)) || img.toCQ() : img.toCQ();
 
         for (const ctx of restCtxs) {
           try {
